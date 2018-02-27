@@ -270,7 +270,8 @@ def throw(level, player, repeat=False):
             target.fade(0.5)
    def __explode__(grenade):
       grenade.destroy()
-      exp = shape(CIRCLE, RED, grenade.pos, size=0.3)
+      gpos = grenade.pos
+      exp = shape(CIRCLE, RED, (gpos[0]-1.5,gpos[1]-1.5), size=0.3)
       exp.collides(sprites(), __hit__)
       exp.scale(10)
       callback(partial(exp.fade, 1), 0.5)
@@ -336,7 +337,7 @@ def get_blue():
 
 Don't like the default pig pen image? It's possible to create your own with this function and then change `pigpen` with whatever image you want!
 ```python
-def default_blue_destination():
+def blue_destination():
    return 'pigpen'
 ```
 
