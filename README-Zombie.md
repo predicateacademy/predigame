@@ -223,7 +223,7 @@ The way this code works is quite simple. Bullets will travel for `distance` numb
 ### Flame thrower
 **LOCATION GUIDE**: *insert as a top-level function* -- **must delete existing throw function prior to insertion**
 
-This one goes without any explanation. It's just really awesome. Keep in mind that the throw key is `1` on your keyboard.
+This one goes without any explanation. It's just really awesome. Keep in mind that the throw key is `2` on your keyboard.
 ```python
 def throw(level, player, repeat=False):
    """ flame thrower """
@@ -277,7 +277,31 @@ def throw(level, player, repeat=False):
       callback(partial(exp.fade, 1), 0.5)
    grenade.move_to(pos, callback=callback(partial(__explode__, grenade), wait=1))
 ```
+### Throw a grenade (that explodes on impact and doesn't destroy walls)
+```python
+def throw(level, player, repeat=False):
+   """ throw an explode on impact grenade (just kills actors)"""
+   player.act(THROW, loop=1)
+   # set the range of the grenade
+   pos = player.facing(5)
+   bpos = player.pos
+   grenade = image('grenade', center=(bpos[0]+0.5, bpos[1]+0.5), size=0.3).spin(0.25)
 
+   def __explode__(grenade):
+      grenade.destroy()
+      gpos = grenade.pos
+      exp = shape(CIRCLE, RED, (gpos[0]-1.5,gpos[1]-1.5), size=0.3)
+      exp.scale(10)
+      callback(partial(exp.fade, 1), 0.5)
+
+   def __hit__(grenade, target):
+      if target != grenade and target != player:
+         if isinstance(target, Actor):
+            __explode__(grenade)
+            target.kill()
+   grenade.move_to(pos, callback=grenade.destroy)
+   grenade.collides(sprites(), __hit__)
+```
 ### Throw a punch
 **LOCATION GUIDE**: *insert as a top-level function* -- **must delete existing punch function prior to insertion**
 
@@ -315,6 +339,39 @@ Mines are cool! This will use the `m` key drop the mine. It'll be active within 
       callback(partial(mine.collides, sprites(), __explode__), wait=3)
    keydown('m', callback=partial(__drop__, player))
 ```
+### Throw some c-4 explosives
+**LOCATION GUIDE**: *insert as a top-level function* -- **must delete existing throw**
+
+This is a two-part weapon. By default `2` will throw the c-4 (you can throw many), and then `3` will detonate.
+
+```python
+def throw(level, player, repeat=False):
+   """ throw some c-4 (explodes on '3' button press)"""
+   player.act(THROW, loop=1)
+   # set the range of the c4
+   pos = player.facing(8)
+   bpos = player.pos
+   c4 = image('mine', tag='c4', center=(bpos[0]+0.5, bpos[1]+0.5), size=0.5).spin(0.25)
+
+   def __hit__(c4, target):
+      if target != c4 and target != player:
+         if isinstance(target, Actor):
+            target.kill()
+   def __explode__(c4):
+      c4.destroy()
+      cpos = c4.pos
+      exp = shape(CIRCLE, RED, (cpos[0]-1.5,cpos[1]-1.5), size=0.3)
+      exp.collides(sprites(), __hit__)
+      exp.scale(10)
+      callback(partial(exp.fade, 1), 0.5)
+   def __detonate__():
+      bombs = get('c4')
+      for bomb in bombs:
+         callback(partial(__explode__, bomb), 0.25)
+   keydown('3', __detonate__)
+   c4.move_to(pos)
+```
+
 
 ## Multidirectional Bullets
 *Under Development*
@@ -340,6 +397,36 @@ Don't like the default pig pen image? It's possible to create your own with this
 def blue_destination():
    return 'pigpen'
 ```
+## Self defense [HARD]
+**LOCATION GUIDE**: *insert as a top-level function and modify `get_blue`*
+
+It's possible to have your blue forces automate a self defense. This code is a bit weird and it still may allow hostiles to kill blue forces.
+
+**Step 1:** Define a self-defense function
+This code checks all directions to see if any red forces are within `5` blocks. If your blue force is not a Piggy, you'll want to change `HAPPY` to `ATTACK`.  When a red force is nearby, Piggy performs an air shot -- instantly killing the enemy.
+```python
+def blue_defend(actor):
+   """ activate self defense """
+   for direction in [BACK, FRONT, LEFT, RIGHT]:
+      things = actor.next_object(direction=direction, distance=5)
+      if things and has_tag(things, 'red'):
+            actor.direction = direction
+            actor.stop = True
+            actor.act(HAPPY, 5)
+            target = actor.next_object()
+            if target and isinstance(target, Actor):
+               target.kill()
+            callback(partial(actor.act, IDLE, FOREVER), 5)
+```
+**Step 2:** Change the `get_blue` function to include the newly added `blue_defend` self defense function.
+
+```python
+def get_blue():
+   """ create a blue (friendly) actor """
+   # return name of actor, grazing speed, self defense
+   return 'Piggy', 2, blue_defend
+```
+
 
 ## Make Friendlies Away from Hostiles(s)
 *Under Development*
@@ -391,6 +478,85 @@ It's easy to schedule more hostiles with a callback function. Here's a couple of
 **schedule a hostile every 10 seconds and repeat forever**
 ```python
    callback(level.create_red, wait=10, repeat=FOREVER)
+```
+
+# Levels
+**LOCATION GUIDE**: *insert inside the setup function* -- `def setup(player, level):`
+
+## Overriding the default behavior (MUST ADD)
+It's possible to change how the story ends! Here's a few possible tricks you can try. Be sure to **register** your `__completed__` function first!
+
+```python
+   def __completed__(self):
+      # promote level by killing all the hostiles
+      if len(get('red')) == 0:
+         return True
+
+   # register the __completed__ function to control how the level decisions are made
+   level.completed = MethodType(__completed__, level)
+```
+
+You'll notice that plugging in this code will drastically change how the levels end. What happens if all the piggies die? What happens if your player dies?
+
+The rest of the the updates will be specific to the `__completed__` function. There is no need to register that function more than once.
+
+
+### Option 1: All Piggies Go Home
+This code will promote the level if all blue forces (piggies) go home. It will also end the game if one dies. Again, you'll want to replace your existing `__completed__` function with this code.
+```python
+   def __completed__(self):
+      if self.blue_spawned == self.blue_safe:
+         return True
+      elif self.blue_killed > 0:
+         text('GAME OVER')
+         gameover()
+
+```
+
+### Option 2: Option 1 + Player Survives
+```python
+   def __completed__(self):
+      if self.blue_spawned == self.blue_safe:
+         return True
+      elif self.blue_killed > 0 or len(get('player')) == 0:
+         text('GAME OVER')
+         gameover()
+```
+
+### Option 3: Option 2 + Kill all the hostiles
+```python
+   def __completed__(self):
+      if self.blue_spawned == self.blue_safe:
+         return True
+      elif len(get('red')) == 0:
+         return True
+      elif self.blue_killed > 0 or len(get('player')) == 0:
+         text('GAME OVER')
+         gameover()  
+```
+### Option 4: Piggies go home and their house survives
+```python
+   def __completed__(self):
+      if self.blue_spawned == self.blue_safe:
+         return True
+      elif len(get('destination')) == 0:
+        text('DESTINATION DESTROYED! GAME OVER!')
+        gameover()  
+      elif self.blue_killed > 0 or len(get('player')) == 0:
+         text('GAME OVER')
+         gameover()  
+```
+### Option 5: Option 4 + all reds die
+```python
+   def __completed__(self):
+      if self.blue_spawned == self.blue_safe and len(get('red')) == 0:
+         return True
+      elif len(get('destination')) == 0:
+        text('DESTINATION DESTROYED! GAME OVER!')
+        gameover()  
+      elif self.blue_killed > 0 or len(get('player')) == 0:
+         text('GAME OVER')
+         gameover()  
 ```
 
 # Scoring
